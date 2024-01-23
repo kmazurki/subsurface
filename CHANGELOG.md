@@ -1,4 +1,5 @@
 desktop: add `hide first gas change` preference option.
+desktop: fix gas switches in UDDF exports
 core: allow of up to 6 O2 sensors (and corresponding voting logic)
 desktop: add divemode as a possible dive list column
 profile-widget: Now zomed in profiles can be panned with horizontal scroll.
