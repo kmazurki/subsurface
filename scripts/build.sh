@@ -86,7 +86,7 @@ while [[ $# -gt 0 ]] ; do
 			# build a fat binary for macOS
 			# ignored on other platforms
 			# this implies a Qt6 build (as m1 isn't supported in Qt5)
-			ARCHS="arm64 x86_64"
+			ARCHS="x86_64"
 			BUILD_WITH_QT6="1"
 			;;
 		-build-prefix)
@@ -194,8 +194,8 @@ if [ "$PLATFORM" = Darwin ] ; then
 	fi
 	if [ "$ARCHS" != "" ] ; then
 		# we do assume that the two architectures mentioned are x86_64 and arm64 .. that's kinda wrong
-		MAC_CMAKE="-DCMAKE_OSX_DEPLOYMENT_TARGET=${BASESDK} -DCMAKE_OSX_SYSROOT=${SDKROOT}/MacOSX${BASESDK}.sdk/ -DCMAKE_OSX_ARCHITECTURES='x86_64;arm64'"
-		MAC_OPTS="-mmacosx-version-min=${BASESDK} -isysroot${SDKROOT}/MacOSX${BASESDK}.sdk -arch arm64 -arch x86_64"
+		MAC_CMAKE="-DCMAKE_OSX_DEPLOYMENT_TARGET=${BASESDK} -DCMAKE_OSX_SYSROOT=${SDKROOT}/MacOSX${BASESDK}.sdk/ -DCMAKE_OSX_ARCHITECTURES='x86_64'"
+		MAC_OPTS="-mmacosx-version-min=${BASESDK} -isysroot${SDKROOT}/MacOSX${BASESDK}.sdk -arch x86_64"
 	else
 		MAC_CMAKE="-DCMAKE_OSX_DEPLOYMENT_TARGET=${BASESDK} -DCMAKE_OSX_SYSROOT=${SDKROOT}/MacOSX${BASESDK}.sdk/"
 		MAC_OPTS="-mmacosx-version-min=${BASESDK} -isysroot${SDKROOT}/MacOSX${BASESDK}.sdk"

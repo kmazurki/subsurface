@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
-import QtQuick 2.5
-import QtLocation 5.3
-import QtPositioning 5.3
+import QtQuick
+import QtLocation
+import QtPositioning
 import org.subsurfacedivelog.mobile 1.0
 
 Item {
