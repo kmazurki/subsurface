@@ -10,6 +10,7 @@
 #include "printoptions.h"
 #include "core/divelist.h"
 #include "core/selection.h"
+#include "core/tag.h"
 #include "core/qthelper.h"
 #include "core/string-format.h"
 
@@ -55,7 +56,7 @@ void set_bundled_templates_as_read_only()
 		listStats[i] = stats + QDir::separator() + listStats.at(i);
 	list += listStats;
 
-	foreach (const QString& f, list)
+	for (const QString &f: list)
 		QFile::setPermissions(pathUser + QDir::separator() + f, QFileDevice::ReadOwner | QFileDevice::ReadUser);
 }
 
@@ -552,7 +553,7 @@ QVariant TemplateLayout::getValue(QString list, QString property, const State &s
 		} else if (property == "notes") {
 			return formatNotes(d);
 		} else if (property == "tags") {
-			return get_taglist_string(d->tag_list);
+			return QString::fromStdString(taglist_get_tagstring(d->tag_list));
 		} else if (property == "gas") {
 			return formatGas(d);
 		} else if (property == "sac") {

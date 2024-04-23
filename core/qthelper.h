@@ -20,6 +20,8 @@ enum watertypes {FRESHWATER, BRACKISHWATER, EN13319WATER, SALTWATER, DC_WATERTYP
 #ifdef __cplusplus
 
 #include <QString>
+#include <optional>
+#include <string>
 #include "core/gettextfromc.h"
 class QImage;
 
@@ -34,14 +36,13 @@ QString distance_string(int distanceInMeters);
 bool gpsHasChanged(struct dive *dive, struct dive *master, const QString &gps_text, bool *parsed_out = 0);
 QString get_gas_string(struct gasmix gas);
 QStringList get_dive_gas_list(const struct dive *d);
-QString get_taglist_string(struct tag_entry *tag_list);
 QStringList stringToList(const QString &s);
 void read_hashes();
 void write_hashes();
 QString thumbnailFileName(const QString &filename);
 void learnPictureFilename(const QString &originalName, const QString &localName);
 QString localFilePath(const QString &originalFilename);
-int getCloudURL(QString &filename);
+std::optional<std::string> getCloudURL(); // move to prefs.h, probably.
 bool parseGpsText(const QString &gps_text, double *latitude, double *longitude);
 void init_proxy();
 QStringList getWaterTypesAsString();
@@ -97,12 +98,14 @@ QString printGPSCoords(const location_t *loc);
 std::string printGPSCoordsC(const location_t *loc);
 std::vector<int> get_cylinder_map_for_remove(int count, int n);
 std::vector<int> get_cylinder_map_for_add(int count, int n);
+std::string get_current_date();
 
 extern QString (*changesCallback)();
 void uiNotification(const QString &msg);
 std::string get_changes_made();
 std::string subsurface_user_agent();
-std::string normalize_cloud_name(const char *remote_in);
+std::string get_file_name(const char *fileName);
+std::string move_away(const std::string &path);
 
 #if defined __APPLE__
 #define TITLE_OR_TEXT(_t, _m) "", _t + "\n" + _m
@@ -120,21 +123,14 @@ extern "C" {
 
 struct git_info;
 
-bool getProxyString(char **buffer);
 bool canReachCloudServer(struct git_info *);
 void updateWindowTitle();
 void subsurface_mkdir(const char *dir);
-char *get_file_name(const char *fileName);
-void set_filename(const char *filename);
 void copy_image_and_overwrite(const char *cfileName, const char *path, const char *cnewName);
-char *move_away(const char *path);
 const char *local_file_path(struct picture *picture);
-char *cloud_url();
 char *hashfile_name_string();
-char *picturedir_string();
 enum deco_mode decoMode(bool in_planner);
 void parse_seabear_header(const char *filename, struct xml_params *params);
-char *get_current_date();
 time_t get_dive_datetime_from_isostring(char *when);
 void print_qt_versions();
 void lock_planner();
@@ -147,14 +143,8 @@ volume_t string_to_volume(const char *str, pressure_t workp);
 fraction_t string_to_fraction(const char *str);
 void emit_reset_signal();
 
-extern void report_info(const char *fmt, ...);
-
 #ifdef __cplusplus
 }
 #endif
-
-// 4) SSRF_INFO macro to replace fprintf calls in our code
-//    (originally based on logging bits from libdivecomputer)
-#define SSRF_INFO(fmt, ...) report_info(fmt, ##__VA_ARGS__)
 
 #endif // QTHELPER_H

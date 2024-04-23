@@ -5,6 +5,7 @@
 #include "core/device.h"
 #include "core/divelist.h"
 #include "core/divelog.h"
+#include "core/errorhelper.h"
 #include "core/settings/qPrefDiveComputer.h"
 #include "core/subsurface-float.h"
 #include "core/subsurface-string.h"
@@ -26,7 +27,8 @@ static bool is_vendor_searchable(QString vendor)
 	return vendor == "Uemis" || vendor == "Garmin";
 }
 
-DownloadFromDCWidget::DownloadFromDCWidget(QWidget *parent) : QDialog(parent, QFlag(0)),
+DownloadFromDCWidget::DownloadFromDCWidget(const QString &filename, QWidget *parent) : QDialog(parent, QFlag(0)),
+	filename(filename),
 	downloading(false),
 	previousLast(0),
 	timer(new QTimer(this)),
@@ -116,10 +118,15 @@ DownloadFromDCWidget::DownloadFromDCWidget(QWidget *parent) : QDialog(parent, QF
 #define SETUPDC(num) \
 	if (!qPrefDiveComputer::vendor##num().isEmpty()) { \
 		ui.DC##num->setVisible(true); \
+		ui.DCFrame##num->setVisible(true); \
+		ui.DeleteDC##num->setVisible(true); \
 		ui.DC##num->setText(qPrefDiveComputer::vendor##num() + " - " + qPrefDiveComputer::product##num()); \
 		connect(ui.DC##num, &QPushButton::clicked, this, &DownloadFromDCWidget::DC##num##Clicked, Qt::UniqueConnection); \
+		connect(ui.DeleteDC##num, &QPushButton::clicked, this, &DownloadFromDCWidget::DeleteDC##num##Clicked, Qt::UniqueConnection); \
 	} else { \
 		ui.DC##num->setVisible(false); \
+		ui.DCFrame##num->setVisible(false); \
+		ui.DeleteDC##num->setVisible(false); \
 	}
 
 void DownloadFromDCWidget::showRememberedDCs()
@@ -141,6 +148,7 @@ int DownloadFromDCWidget::deviceIndex(QString deviceText)
 	return rv;
 }
 
+
 // DC button slots
 // we need two versions as one of the helper functions used is only available if
 // Bluetooth support is enabled
@@ -151,19 +159,8 @@ void DownloadFromDCWidget::DC##num##Clicked() \
 	ui.vendor->setCurrentIndex(ui.vendor->findText(qPrefDiveComputer::vendor##num())); \
 	productModel.setStringList(productList[qPrefDiveComputer::vendor##num()]); \
 	ui.product->setCurrentIndex(ui.product->findText(qPrefDiveComputer::product##num())); \
-	bool isBluetoothDevice = isBluetoothAddress(qPrefDiveComputer::device##num()); \
-	bool isMacOs = QSysInfo::kernelType() == "darwin"; \
-	ui.bluetoothMode->setChecked(isBluetoothDevice); \
-	if (ui.device->currentIndex() == -1 || (isBluetoothDevice && !isMacOs)) \
-		/* macOS seems to have a problem connecting to remembered bluetooth devices  if it hasn't already had a connection in the current session */ \
-		ui.device->setCurrentIndex(deviceIndex(qPrefDiveComputer::device##num())); \
-	if (isMacOs) { \
-		/* it makes no sense that this would be needed on macOS but not Linux */ \
-		QCoreApplication::processEvents(); \
-		ui.vendor->update(); \
-		ui.product->update(); \
-		ui.device->update(); \
-	} \
+	ui.device->setCurrentIndex(deviceIndex(qPrefDiveComputer::device##num())); \
+	ui.bluetoothMode->setChecked(isBluetoothAddress(qPrefDiveComputer::device##num())); \
 }
 #else
 #define DCBUTTON(num) \
@@ -173,13 +170,6 @@ void DownloadFromDCWidget::DC##num##Clicked() \
 	productModel.setStringList(productList[qPrefDiveComputer::vendor##num()]); \
 	ui.product->setCurrentIndex(ui.product->findText(qPrefDiveComputer::product##num())); \
 	ui.device->setCurrentIndex(deviceIndex(qPrefDiveComputer::device##num())); \
-	if (QSysInfo::kernelType() == "darwin") { \
-		/* it makes no sense that this would be needed on macOS but not Linux */ \
-		QCoreApplication::processEvents(); \
-		ui.vendor->update(); \
-		ui.product->update(); \
-		ui.device->update(); \
-	} \
 }
 #endif
 
@@ -187,6 +177,39 @@ DCBUTTON(1)
 DCBUTTON(2)
 DCBUTTON(3)
 DCBUTTON(4)
+
+// Delete DC button slots
+#define DELETEDCBUTTON(num) \
+void DownloadFromDCWidget::DeleteDC##num##Clicked() \
+{ \
+	ui.DC##num->setVisible(false); \
+	ui.DeleteDC##num->setVisible(false); \
+	int dc = num; \
+	switch (dc) { \
+		case 1: \
+			qPrefDiveComputer::set_vendor1(qPrefDiveComputer::vendor2()); \
+			qPrefDiveComputer::set_product1(qPrefDiveComputer::product2()); \
+			qPrefDiveComputer::set_device1(qPrefDiveComputer::device2()); \
+		case 2: \
+			qPrefDiveComputer::set_vendor2(qPrefDiveComputer::vendor3()); \
+			qPrefDiveComputer::set_product2(qPrefDiveComputer::product3()); \
+			qPrefDiveComputer::set_device2(qPrefDiveComputer::device3()); \
+		case 3: \
+			qPrefDiveComputer::set_vendor3(qPrefDiveComputer::vendor4()); \
+			qPrefDiveComputer::set_product3(qPrefDiveComputer::product4()); \
+			qPrefDiveComputer::set_device3(qPrefDiveComputer::device4()); \
+		case 4: \
+			qPrefDiveComputer::set_vendor4(QString()); \
+			qPrefDiveComputer::set_product4(QString()); \
+			qPrefDiveComputer::set_device4(QString()); \
+	} \
+	DownloadFromDCWidget::showRememberedDCs(); \
+}
+
+DELETEDCBUTTON(1)
+DELETEDCBUTTON(2)
+DELETEDCBUTTON(3)
+DELETEDCBUTTON(4)
 
 void DownloadFromDCWidget::updateProgressBar()
 {
@@ -411,7 +434,7 @@ void DownloadFromDCWidget::on_downloadCancelRetryButton_clicked()
 
 		if ((colon = strstr(devname, ":\\ (UEMISSDA)")) != NULL) {
 			*(colon + 2) = '\0';
-			fprintf(stderr, "shortened devname to \"%s\"", devname);
+			report_info("shortened devname to \"%s\"", devname);
 		}
 		data->setDevName(devname);
 	} else {
@@ -461,15 +484,12 @@ void DownloadFromDCWidget::checkLogFile(int state)
 
 void DownloadFromDCWidget::pickLogFile()
 {
-	QString filename = existing_filename ?: prefs.default_filename;
 	QFileInfo fi(filename);
-	filename = fi.absolutePath().append(QDir::separator()).append("subsurface.log");
+	QString logfilename = fi.absolutePath().append(QDir::separator()).append("subsurface.log");
 	QString logFile = QFileDialog::getSaveFileName(this, tr("Choose file for dive computer download logfile"),
-						       filename, tr("Log files") + " (*.log)");
-	if (!logFile.isEmpty()) {
-		free(logfile_name);
-		logfile_name = copy_qstring(logFile);
-	}
+						       logfilename, tr("Log files") + " (*.log)");
+	if (!logFile.isEmpty())
+		logfile_name = logFile.toStdString();
 }
 
 void DownloadFromDCWidget::checkDumpFile(int state)
@@ -487,15 +507,12 @@ void DownloadFromDCWidget::checkDumpFile(int state)
 
 void DownloadFromDCWidget::pickDumpFile()
 {
-	QString filename = existing_filename ?: prefs.default_filename;
 	QFileInfo fi(filename);
-	filename = fi.absolutePath().append(QDir::separator()).append("subsurface.bin");
+	QString dumpfilename = fi.absolutePath().append(QDir::separator()).append("subsurface.bin");
 	QString dumpFile = QFileDialog::getSaveFileName(this, tr("Choose file for dive computer binary dump file"),
-							filename, tr("Dump files") + " (*.bin)");
-	if (!dumpFile.isEmpty()) {
-		free(dumpfile_name);
-		dumpfile_name = copy_qstring(dumpFile);
-	}
+							dumpfilename, tr("Dump files") + " (*.bin)");
+	if (!dumpFile.isEmpty())
+		dumpfile_name = dumpFile.toStdString();
 }
 
 void DownloadFromDCWidget::reject()
@@ -547,7 +564,7 @@ void DownloadFromDCWidget::on_ok_clicked()
 	diveImportedModel->recordDives(flags);
 
 	if (ostcFirmwareCheck && currentState == DONE)
-		ostcFirmwareCheck->checkLatest(this, diveImportedModel->thread.data()->internalData());
+		ostcFirmwareCheck->checkLatest(this, diveImportedModel->thread.data()->internalData(), filename);
 	accept();
 }
 
@@ -639,10 +656,16 @@ void DownloadFromDCWidget::enableBluetoothMode(int state)
 {
 	ui.chooseBluetoothDevice->setEnabled(state == Qt::Checked);
 
-	if (state == Qt::Checked)
-		selectRemoteBluetoothDevice();
-	else
-		ui.device->setCurrentIndex(-1);
+	/*	This is convoluted enough to warrant explanation:
+ 		1. If Bluetooth is enabled, but no Bluetooth address then scan.
+		2. If Bluetooth is enabled and we have a Bluetooth address, skip scan.
+		3. If Bluetooth is not enabled, but it's a Bluetooth address, clear it. */
+	if (state == Qt::Checked) {
+		if (!isBluetoothAddress(ui.device->currentText()))
+			selectRemoteBluetoothDevice();
+	} else
+		if (isBluetoothAddress(ui.device->currentText()))
+			ui.device->setCurrentIndex(-1);
 }
 #endif
 

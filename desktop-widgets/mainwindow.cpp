@@ -85,7 +85,7 @@ namespace {
 extern "C" int updateProgress(const char *text)
 {
 	if (verbose)
-		qDebug() << "git storage:" << text;
+		report_info("git storage: %s", text);
 	if (progressDialog) {
 		// apparently we don't always get enough space to show the full label
 		// so let's manually make enough space (but don't shrink the existing size)
@@ -376,13 +376,13 @@ void MainWindow::on_actionOpen_triggered()
 	// some file dialogs decide to add the default extension to a filename without extension
 	// so we would get dir[branch].ssrf when trying to select dir[branch].
 	// let's detect that and remove the incorrect extension
-	QStringList cleanFilenames;
+	std::vector<std::string> cleanFilenames;
 	QRegularExpression reg(".*\\[[^]]+]\\.ssrf", QRegularExpression::CaseInsensitiveOption);
 
-	Q_FOREACH (QString filename, filenames) {
+	for (QString filename: filenames) {
 		if (reg.match(filename).hasMatch())
 			filename.remove(QRegularExpression("\\.ssrf$", QRegularExpression::CaseInsensitiveOption));
-		cleanFilenames << filename;
+		cleanFilenames.push_back(filename.toStdString());
 	}
 	loadFiles(cleanFilenames);
 }
@@ -399,24 +399,29 @@ void MainWindow::on_actionSaveAs_triggered()
 	file_save_as();
 }
 
+static std::string encodeFileName(const std::string &fn)
+{
+	return QFile::encodeName(QString::fromStdString(fn)).toStdString();
+}
+
 void MainWindow::on_actionCloudstorageopen_triggered()
 {
 	if (!okToClose(tr("Please save or cancel the current dive edit before opening a new file.")))
 		return;
 
-	QString filename;
-	if (getCloudURL(filename))
+	auto filename = getCloudURL();
+	if (!filename)
 		return;
 
 	if (verbose)
-		qDebug() << "Opening cloud storage from:" << filename;
+		report_info("Opening cloud storage from: %s", filename->c_str());
 
 	closeCurrentFile();
 
 	showProgressBar();
-	QByteArray fileNamePtr = QFile::encodeName(filename);
-	if (!parse_file(fileNamePtr.data(), &divelog))
-		setCurrentFile(fileNamePtr.data());
+	std::string encoded = encodeFileName(*filename);
+	if (!parse_file(encoded.c_str(), &divelog))
+		setCurrentFile(encoded);
 	process_loaded_dives();
 	hideProgressBar();
 	refreshDisplay();
@@ -427,7 +432,7 @@ void MainWindow::on_actionCloudstorageopen_triggered()
 static bool saveToCloudOK()
 {
 	if (!divelog.dives->nr) {
-		report_error(qPrintable(gettextFromC::tr("Don't save an empty log to the cloud")));
+		report_error("%s", qPrintable(gettextFromC::tr("Don't save an empty log to the cloud")));
 		return false;
 	}
 	return true;
@@ -435,23 +440,23 @@ static bool saveToCloudOK()
 
 void MainWindow::on_actionCloudstoragesave_triggered()
 {
-	QString filename;
 	if (!saveToCloudOK())
 		return;
-	if (getCloudURL(filename))
+	auto filename = getCloudURL();
+	if (!filename)
 		return;
 
 	if (verbose)
-		qDebug() << "Saving cloud storage to:" << filename;
+		report_info("Saving cloud storage to: %s", filename->c_str());
 	mainTab->stealFocus(); // Make sure that any currently edited field is updated before saving.
 
 	showProgressBar();
-	int error = save_dives(qPrintable(filename));
+	int error = save_dives(filename->c_str());
 	hideProgressBar();
 	if (error)
 		return;
 
-	setCurrentFile(qPrintable(filename));
+	setCurrentFile(*filename);
 	Command::setClean();
 }
 
@@ -486,7 +491,7 @@ void MainWindow::on_actionCloudOnline_triggered()
 			on_actionCloudstorageopen_triggered();
 		}
 		if (git_local_only)
-			report_error(qPrintable(tr("Failure taking cloud storage online")));
+			report_error("%s", qPrintable(tr("Failure taking cloud storage online")));
 	}
 
 	setTitle();
@@ -510,24 +515,24 @@ void MainWindow::closeCurrentFile()
 	/* free the dives and trips */
 	clear_git_id();
 	clear_dive_file_data(); // this clears all the core data structures and resets the models
-	setCurrentFile(nullptr);
+	setCurrentFile(std::string());
 	diveList->setSortOrder(DiveTripModelBase::NR, Qt::DescendingOrder);
-	if (!existing_filename)
+	if (existing_filename.empty())
 		setTitle();
 	disableShortcuts();
 }
 
 void MainWindow::updateCloudOnlineStatus()
 {
-	bool is_cloud = existing_filename && prefs.cloud_verification_status == qPrefCloudStorage::CS_VERIFIED &&
-			strstr(existing_filename, prefs.cloud_base_url);
+	bool is_cloud = !existing_filename.empty() && prefs.cloud_verification_status == qPrefCloudStorage::CS_VERIFIED &&
+			existing_filename.find(prefs.cloud_base_url) != std::string::npos;
 	ui.actionCloudOnline->setEnabled(is_cloud);
 	ui.actionCloudOnline->setChecked(is_cloud && !git_local_only);
 }
 
-void MainWindow::setCurrentFile(const char *f)
+void MainWindow::setCurrentFile(const std::string &f)
 {
-	set_filename(f);
+	existing_filename = f;
 	setTitle();
 	updateCloudOnlineStatus();
 }
@@ -545,13 +550,19 @@ void MainWindow::updateLastUsedDir(const QString &dir)
 	qPrefDisplay::set_lastDir(dir);
 }
 
+static QString get_current_filename()
+{
+	return existing_filename.empty() ? QString(prefs.default_filename)
+					 : QString::fromStdString(existing_filename);
+}
 void MainWindow::on_actionPrint_triggered()
 {
 #ifndef NO_PRINTING
 	// When in planner, only print the planned dive.
 	dive *singleDive = appState == ApplicationState::PlanDive ? plannerWidgets->getDive()
 								  : nullptr;
-	PrintDialog dlg(singleDive, this);
+	QString filename = get_current_filename();
+	PrintDialog dlg(singleDive, filename, this);
 
 	dlg.exec();
 #endif
@@ -607,7 +618,8 @@ void MainWindow::on_actionQuit_triggered()
 
 void MainWindow::on_actionDownloadDC_triggered()
 {
-	DownloadFromDCWidget dlg(this);
+	QString filename = get_current_filename();
+	DownloadFromDCWidget dlg(filename, this);
 	dlg.exec();
 }
 
@@ -978,7 +990,7 @@ bool MainWindow::askSaveChanges()
 {
 	QMessageBox response(this);
 
-	QString message = existing_filename ?
+	QString message = !existing_filename.empty() ?
 		tr("Do you want to save the changes that you made in the file %1?").arg(displayedFilename(existing_filename)) :
 		tr("Do you want to save the changes that you made in the data file?");
 
@@ -1064,7 +1076,7 @@ void MainWindow::loadRecentFiles()
 	recentFiles.clear();
 	QSettings s;
 	s.beginGroup("Recent_Files");
-	foreach (const QString &key, s.childKeys()) {
+	for (const QString &key: s.childKeys()) {
 		// TODO Sorting only correct up to 9 entries. Currently, only 4 used, so no problem.
 		if (!key.startsWith("File_"))
 			continue;
@@ -1149,29 +1161,29 @@ void MainWindow::recentFileTriggered(bool)
 
 	updateLastUsedDir(QFileInfo(filename).dir().path());
 	closeCurrentFile();
-	loadFiles(QStringList() << filename);
+	loadFiles(std::vector<std::string> { filename.toStdString() });
 }
 
 int MainWindow::file_save_as(void)
 {
 	QString filename;
-	const char *default_filename = existing_filename;
+	std::string default_filename = existing_filename;
 
 	// if the default is to save to cloud storage, pick something that will work as local file:
 	// simply extract the branch name which should be the users email address
-	if (default_filename && QString(default_filename).contains(QRegularExpression(CLOUD_HOST_PATTERN))) {
-		QString filename(default_filename);
+	if (!default_filename.empty() && QString::fromStdString(default_filename).contains(QRegularExpression(CLOUD_HOST_PATTERN))) {
+		QString filename = QString::fromStdString(default_filename);
 		filename.remove(0, filename.indexOf("[") + 1);
 		filename.replace("]", ".ssrf");
-		default_filename = copy_qstring(filename);
+		default_filename = filename.toStdString();
 	}
 	// create a file dialog that allows us to save to a new file
-	QFileDialog selection_dialog(this, tr("Save file as"), default_filename,
+	QFileDialog selection_dialog(this, tr("Save file as"), default_filename.c_str(),
 					 tr("Subsurface files") + " (*.ssrf *.xml)");
 	selection_dialog.setAcceptMode(QFileDialog::AcceptSave);
 	selection_dialog.setFileMode(QFileDialog::AnyFile);
 	selection_dialog.setDefaultSuffix("");
-	if (empty_string(default_filename)) {
+	if (default_filename.empty()) {
 		QFileInfo defaultFile(system_default_filename());
 		selection_dialog.setDirectory(qPrintable(defaultFile.absolutePath()));
 	}
@@ -1194,7 +1206,7 @@ int MainWindow::file_save_as(void)
 	if (save_dives(qPrintable(filename)))
 		return -1;
 
-	setCurrentFile(qPrintable(filename));
+	setCurrentFile(filename.toStdString());
 	Command::setClean();
 	addRecentFile(filename, true);
 	return 0;
@@ -1205,15 +1217,15 @@ int MainWindow::file_save(void)
 	const char *current_default;
 	bool is_cloud = false;
 
-	if (!existing_filename)
+	if (existing_filename.empty())
 		return file_save_as();
 
-	is_cloud = (strncmp(existing_filename, "http", 4) == 0);
+	is_cloud = (starts_with(existing_filename, "http") == 0);
 	if (is_cloud && !saveToCloudOK())
 		return -1;
 
 	current_default = prefs.default_filename;
-	if (strcmp(existing_filename, current_default) == 0) {
+	if (existing_filename == current_default) {
 		/* if we are using the default filename the directory
 		 * that we are creating the file in may not exist */
 		QDir current_def_dir = QFileInfo(current_default).absoluteDir();
@@ -1222,7 +1234,7 @@ int MainWindow::file_save(void)
 	}
 	if (is_cloud)
 		showProgressBar();
-	if (save_dives(existing_filename)) {
+	if (save_dives(existing_filename.c_str())) {
 		if (is_cloud)
 			hideProgressBar();
 		return -1;
@@ -1230,7 +1242,7 @@ int MainWindow::file_save(void)
 	if (is_cloud)
 		hideProgressBar();
 	Command::setClean();
-	addRecentFile(QString(existing_filename), true);
+	addRecentFile(QString::fromStdString(existing_filename), true);
 	return 0;
 }
 
@@ -1239,13 +1251,13 @@ NotificationWidget *MainWindow::getNotificationWidget()
 	return ui.mainErrorMessage;
 }
 
-QString MainWindow::displayedFilename(QString fullFilename)
+QString MainWindow::displayedFilename(const std::string &fullFilename)
 {
-	QFile f(fullFilename);
+	QFile f(fullFilename.c_str());
 	QFileInfo fileInfo(f);
 	QString fileName(fileInfo.fileName());
 
-	if (fullFilename.contains(prefs.cloud_base_url)) {
+	if (fullFilename.find(prefs.cloud_base_url) != std::string::npos) {
 		QString email = fileName.left(fileName.indexOf('['));
 		return git_local_only ?
 			tr("[local cache for] %1").arg(email) :
@@ -1263,7 +1275,7 @@ void MainWindow::setAutomaticTitle()
 
 void MainWindow::setTitle()
 {
-	if (empty_string(existing_filename)) {
+	if (existing_filename.empty()) {
 		setWindowTitle("Subsurface");
 		return;
 	}
@@ -1273,35 +1285,34 @@ void MainWindow::setTitle()
 	setWindowTitle("Subsurface: " + displayedFilename(existing_filename) + unsaved + shown);
 }
 
-void MainWindow::importFiles(const QStringList &fileNames)
+void MainWindow::importFiles(const std::vector<std::string> &fileNames)
 {
-	if (fileNames.isEmpty())
+	if (fileNames.empty())
 		return;
 
-	QByteArray fileNamePtr;
 	struct divelog log;
 
-	for (int i = 0; i < fileNames.size(); ++i) {
-		fileNamePtr = QFile::encodeName(fileNames.at(i));
-		parse_file(fileNamePtr.data(), &log);
+	for (const std::string &fn: fileNames) {
+		std::string encoded = encodeFileName(fn);
+		parse_file(encoded.c_str(), &log);
 	}
-	QString source = fileNames.size() == 1 ? fileNames[0] : tr("multiple files");
+	QString source = fileNames.size() == 1 ? QString::fromStdString(fileNames[0]) : tr("multiple files");
 	Command::importDives(&log, IMPORT_MERGE_ALL_TRIPS, source);
 }
 
-void MainWindow::loadFiles(const QStringList &fileNames)
+void MainWindow::loadFiles(const std::vector<std::string> &fileNames)
 {
-	if (fileNames.isEmpty()) {
+	if (fileNames.empty()) {
 		refreshDisplay();
 		return;
 	}
 	QByteArray fileNamePtr;
 
 	showProgressBar();
-	for (int i = 0; i < fileNames.size(); ++i) {
-		fileNamePtr = QFile::encodeName(fileNames.at(i));
+	for (const std::string &fn: fileNames) {
+		fileNamePtr = QFile::encodeName(QString::fromStdString(fn));
 		if (!parse_file(fileNamePtr.data(), &divelog)) {
-			setCurrentFile(fileNamePtr.data());
+			setCurrentFile(fileNamePtr.toStdString());
 			addRecentFile(fileNamePtr, false);
 		}
 	}
@@ -1345,13 +1356,13 @@ void MainWindow::on_actionImportDiveLog_triggered()
 		return;
 	updateLastUsedDir(QFileInfo(fileNames[0]).dir().path());
 
-	QStringList logFiles;
+	std::vector<std::string> logFiles;
 	QStringList csvFiles;
 	for (const QString &fn: fileNames) {
 		if (isCsvFile(fn))
 			csvFiles.append(fn);
 		else
-			logFiles.append(fn);
+			logFiles.push_back(fn.toStdString());
 	}
 
 	if (logFiles.size())
@@ -1395,7 +1406,8 @@ void MainWindow::on_actionExport_triggered()
 
 void MainWindow::on_actionConfigure_Dive_Computer_triggered()
 {
-	ConfigureDiveComputerDialog *dcConfig = new ConfigureDiveComputerDialog(this);
+	QString filename = get_current_filename();
+	ConfigureDiveComputerDialog *dcConfig = new ConfigureDiveComputerDialog(filename, this);
 	dcConfig->show();
 }
 
@@ -1555,7 +1567,7 @@ void MainWindow::hideProgressBar()
 void MainWindow::divesChanged(const QVector<dive *> &dives, DiveField)
 {
 	for (struct dive *d: dives) {
-		qDebug() << "dive #" << d->number << "changed, cache is" << (dive_cache_is_valid(d) ? "valid" : "invalidated");
+		report_info("dive #%d changed, cache is %s", d->number, dive_cache_is_valid(d) ? "valid" : "invalidated");
 		// a brute force way to deal with that would of course be to call
 		// invalidate_dive_cache(d);
 	}

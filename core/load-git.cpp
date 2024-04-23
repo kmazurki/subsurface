@@ -23,6 +23,7 @@
 #include "errorhelper.h"
 #include "sample.h"
 #include "subsurface-string.h"
+#include "format.h"
 #include "trip.h"
 #include "device.h"
 #include "git-access.h"
@@ -1042,7 +1043,7 @@ static void parse_settings_fingerprint(char *line, struct git_parser_state *stat
 		line = parse_keyvalue_entry(parse_fingerprint_keyvalue, &fph, line, state);
 	}
 	if (verbose > 1)
-		SSRF_INFO("fingerprint %08x %08x %08x %08x %s\n", fph.model, fph.serial, fph.fdeviceid, fph.fdiveid, fph.hex_data.c_str());
+		report_info("fingerprint %08x %08x %08x %08x %s\n", fph.model, fph.serial, fph.fdeviceid, fph.fdiveid, fph.hex_data.c_str());
 	create_fingerprint_node_from_hex(&fingerprint_table, fph.model, fph.serial,
 					 fph.hex_data.c_str(), fph.fdeviceid, fph.fdiveid);
 }
@@ -1336,7 +1337,7 @@ static unsigned parse_one_line(const char *buf, unsigned size, line_fn_t *fn, st
 			if (*p++ == '\n')
 				break;
 		} while (p < end);
-		SSRF_INFO("git storage: Ignoring line '%.*s'", (int)(p-buf-1), buf);
+		report_info("git storage: Ignoring line '%.*s'", (int)(p-buf-1), buf);
 		return p - buf;
 	default:
 		break;
@@ -1799,7 +1800,7 @@ static int walk_tree_file(const char *root, const git_tree_entry *entry, struct 
 	dive_trip_t *trip = state->active_trip;
 	const char *name = git_tree_entry_name(entry);
 	if (verbose > 1)
-		SSRF_INFO("git load handling file %s\n", name);
+		report_info("git load handling file %s\n", name);
 	switch (*name) {
 	case '-': case '+':
 		if (dive)
@@ -1895,11 +1896,11 @@ static int do_git_load(git_repository *repo, const char *branch, struct git_pars
 	return ret;
 }
 
-std::string get_sha(git_repository *repo, const char *branch)
+std::string get_sha(git_repository *repo, const std::string &branch)
 {
 	char git_id_buffer[GIT_OID_HEXSZ + 1];
 	git_commit *commit;
-	if (find_commit(repo, branch, &commit))
+	if (find_commit(repo, branch.c_str(), &commit))
 		return std::string();
 	git_oid_tostr(git_id_buffer, sizeof(git_id_buffer), (const git_oid *)commit);
 	return std::string(git_id_buffer);
@@ -1913,7 +1914,7 @@ std::string get_sha(git_repository *repo, const char *branch)
  * If it is a git repository, we return zero for success,
  * or report an error and return 1 if the load failed.
  */
-extern "C" int git_load_dives(struct git_info *info, struct divelog *log)
+int git_load_dives(struct git_info *info, struct divelog *log)
 {
 	int ret;
 	struct git_parser_state state;
@@ -1921,8 +1922,8 @@ extern "C" int git_load_dives(struct git_info *info, struct divelog *log)
 	state.log = log;
 
 	if (!info->repo)
-		return report_error("Unable to open git repository '%s[%s]'", info->url, info->branch);
-	ret = do_git_load(info->repo, info->branch, &state);
+		return report_error("Unable to open git repository '%s[%s]'", info->url.c_str(), info->branch.c_str());
+	ret = do_git_load(info->repo, info->branch.c_str(), &state);
 	finish_active_dive(&state);
 	finish_active_trip(&state);
 	return ret;

@@ -25,7 +25,7 @@ class BTDiscovery;
 class DownloadFromDCWidget : public QDialog {
 	Q_OBJECT
 public:
-	explicit DownloadFromDCWidget(QWidget *parent = 0);
+	explicit DownloadFromDCWidget(const QString &filename, QWidget *parent = 0);
 	void reject();
 
 	enum states {
@@ -56,6 +56,10 @@ slots:
 	void DC2Clicked();
 	void DC3Clicked();
 	void DC4Clicked();
+	void DeleteDC1Clicked();
+	void DeleteDC2Clicked();
+	void DeleteDC3Clicked();
+	void DeleteDC4Clicked();
 	int deviceIndex(QString deviceText);
 
 #if defined(BT_SUPPORT)
@@ -72,6 +76,7 @@ private:
 	QStringListModel vendorModel;
 	QStringListModel productModel;
 	Ui::DownloadFromDiveComputer ui;
+	QString filename;
 	bool downloading;
 
 	int previousLast;

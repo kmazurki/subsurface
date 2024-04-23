@@ -113,7 +113,7 @@ static void save_tags(struct membuffer *b, struct tag_entry *tags)
 		return;
 	put_string(b, "tags");
 	while (tags) {
-		show_utf8(b, sep, tags->tag->source ? : tags->tag->name, "");
+		show_utf8(b, sep, tags->tag->source.empty() ? tags->tag->name.c_str() : tags->tag->source.c_str(), "");
 		sep = ", ";
 		tags = tags->next;
 	}
@@ -473,7 +473,7 @@ static void create_dive_buffer(struct dive *dive, struct membuffer *b)
 	if (dive->dive_site)
 		put_format(b, "divesiteid %08x\n", dive->dive_site->uuid);
 	if (verbose && dive->dive_site)
-		SSRF_INFO("removed reference to non-existant dive site with uuid %08x\n", dive->dive_site->uuid);
+		report_info("removed reference to non-existant dive site with uuid %08x\n", dive->dive_site->uuid);
 	save_overview(b, dive);
 	save_cylinder_info(b, dive);
 	save_weightsystem_info(b, dive);
@@ -526,7 +526,7 @@ static int tree_insert(git_treebuilder *dir, const char *name, int mkunique, git
 	if (ret) {
 		const git_error *gerr = giterr_last();
 		if (gerr) {
-			SSRF_INFO("tree_insert failed with return %d error %s\n", ret, gerr->message);
+			report_info("tree_insert failed with return %d error %s\n", ret, gerr->message);
 		}
 	}
 	return ret;
@@ -1164,7 +1164,7 @@ static void create_commit_message(struct membuffer *msg, bool create_empty)
 	}
 	put_format(msg, "Created by %s\n", subsurface_user_agent().c_str());
 	if (verbose)
-		SSRF_INFO("Commit message:\n\n%s\n", mb_cstring(msg));
+		report_info("Commit message:\n\n%s\n", mb_cstring(msg));
 }
 
 static int create_new_commit(struct git_info *info, git_oid *tree_id, bool create_empty)
@@ -1177,27 +1177,27 @@ static int create_new_commit(struct git_info *info, git_oid *tree_id, bool creat
 	git_commit *commit;
 	git_tree *tree;
 
-	ret = git_branch_lookup(&ref, info->repo, info->branch, GIT_BRANCH_LOCAL);
+	ret = git_branch_lookup(&ref, info->repo, info->branch.c_str(), GIT_BRANCH_LOCAL);
 	switch (ret) {
 	default:
-		return report_error("Bad branch '%s' (%s)", info->branch, strerror(errno));
+		return report_error("Bad branch '%s' (%s)", info->branch.c_str(), strerror(errno));
 	case GIT_EINVALIDSPEC:
-		return report_error("Invalid branch name '%s'", info->branch);
+		return report_error("Invalid branch name '%s'", info->branch.c_str());
 	case GIT_ENOTFOUND: /* We'll happily create it */
 		ref = NULL;
 		parent = try_to_find_parent(saved_git_id.c_str(), info->repo);
 		break;
 	case 0:
 		if (git_reference_peel(&parent, ref, GIT_OBJ_COMMIT))
-			return report_error("Unable to look up parent in branch '%s'", info->branch);
+			return report_error("Unable to look up parent in branch '%s'", info->branch.c_str());
 
 		if (!saved_git_id.empty()) {
-			if (existing_filename && verbose)
-				SSRF_INFO("existing filename %s\n", existing_filename);
+			if (!existing_filename.empty() && verbose)
+				report_info("existing filename %s\n", existing_filename.c_str());
 			const git_oid *id = git_commit_id((const git_commit *) parent);
 			/* if we are saving to the same git tree we got this from, let's make
 			 * sure there is no confusion */
-			if (same_string(existing_filename, info->url) && git_oid_strcmp(id, saved_git_id.c_str()))
+			if (existing_filename == info->url && git_oid_strcmp(id, saved_git_id.c_str()))
 				return report_error("The git branch does not match the git parent of the source");
 		}
 
@@ -1238,8 +1238,8 @@ static int create_new_commit(struct git_info *info, git_oid *tree_id, bool creat
 	git_signature_free(author);
 
 	if (!ref) {
-		if (git_branch_create(&ref, info->repo, info->branch, commit, 0))
-			return report_error("Failed to create branch '%s'", info->branch);
+		if (git_branch_create(&ref, info->repo, info->branch.c_str(), commit, 0))
+			return report_error("Failed to create branch '%s'", info->branch.c_str());
 	}
 	/*
 	 * If it's a checked-out branch, try to also update the working
@@ -1253,12 +1253,12 @@ static int create_new_commit(struct git_info *info, git_oid *tree_id, bool creat
 			const git_error *err = giterr_last();
 			const char *errstr = err ? err->message : strerror(errno);
 			report_error("Git branch '%s' is checked out, but worktree is dirty (%s)",
-				info->branch, errstr);
+				info->branch.c_str(), errstr);
 		}
 	}
 
 	if (git_reference_set_target(&ref, ref, &commit_id, "Subsurface save event"))
-		return report_error("Failed to update branch '%s'", info->branch);
+		return report_error("Failed to update branch '%s'", info->branch.c_str());
 
 	/*
 	 * if this was the empty commit to initialize a new repo, don't remember the
@@ -1288,23 +1288,23 @@ static int write_git_tree(git_repository *repo, const struct dir *tree, git_oid 
 	if (ret && verbose) {
 		const git_error *gerr = giterr_last();
 		if (gerr)
-			SSRF_INFO("tree_insert failed with return %d error %s\n", ret, gerr->message);
+			report_info("tree_insert failed with return %d error %s\n", ret, gerr->message);
 	}
 
 	return ret;
 }
 
-extern "C" int do_git_save(struct git_info *info, bool select_only, bool create_empty)
+int do_git_save(struct git_info *info, bool select_only, bool create_empty)
 {
 	struct dir tree;
 	git_oid id;
 	bool cached_ok;
 
 	if (!info->repo)
-		return report_error("Unable to open git repository '%s[%s]'", info->url, info->branch);
+		return report_error("Unable to open git repository '%s[%s]'", info->url.c_str(), info->branch.c_str());
 
 	if (verbose)
-		SSRF_INFO("git storage: do git save\n");
+		report_info("git storage: do git save\n");
 
 	if (!create_empty) // so we are actually saving the dives
 		git_storage_update_progress(translate("gettextFromC", "Preparing to save data"));
@@ -1325,7 +1325,7 @@ extern "C" int do_git_save(struct git_info *info, bool select_only, bool create_
 			return -1;
 
 	if (verbose)
-		SSRF_INFO("git storage, write git tree\n");
+		report_info("git storage, write git tree\n");
 
 	if (write_git_tree(info->repo, &tree, &id))
 		return report_error("git tree write failed");
@@ -1335,12 +1335,12 @@ extern "C" int do_git_save(struct git_info *info, bool select_only, bool create_
 		return report_error("creating commit failed");
 
 	/* now sync the tree with the remote server */
-	if (info->url && !git_local_only)
+	if (!info->url.empty() && !git_local_only)
 		return sync_with_remote(info);
 	return 0;
 }
 
-extern "C" int git_save_dives(struct git_info *info, bool select_only)
+int git_save_dives(struct git_info *info, bool select_only)
 {
 	/*
 	 * First, just try to open the local git repo without
@@ -1357,7 +1357,7 @@ extern "C" int git_save_dives(struct git_info *info, bool select_only)
 	 * at least the local state will be saved early in
 	 * case something goes wrong.
 	 */
-	if (!git_repository_open(&info->repo, info->localdir))
+	if (!git_repository_open(&info->repo, info->localdir.c_str()))
 		return do_git_save(info, select_only, false);
 
 	/*
@@ -1369,7 +1369,7 @@ extern "C" int git_save_dives(struct git_info *info, bool select_only)
 	 * This shouldn't be the common case.
 	 */
 	if (!open_git_repository(info))
-		return report_error(translate("gettextFromC", "Failed to save dives to %s[%s] (%s)"), info->url, info->branch, strerror(errno));
+		return report_error(translate("gettextFromC", "Failed to save dives to %s[%s] (%s)"), info->url.c_str(), info->branch.c_str(), strerror(errno));
 
 	return do_git_save(info, select_only, false);
 }

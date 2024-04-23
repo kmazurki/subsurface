@@ -16,6 +16,7 @@
 #include "core/divesite.h"
 #include "core/divelog.h"
 #include "core/device.h"
+#include "core/errorhelper.h"
 #include "core/trip.h"
 #include "core/import-csv.h"
 #include "core/xmlparams.h"
@@ -495,7 +496,7 @@ void DiveLogImportDialog::loadFileContents(int value, whatChanged triggeredBy)
 		firstLine = f.readLine().trimmed();
 
 		currColumns = firstLine.split(';');
-		Q_FOREACH (QString columnText, currColumns) {
+		for (const QString &columnText: currColumns) {
 			if (columnText == "Time") {
 				headers.append("Sample time");
 			} else if (columnText == "Depth") {
@@ -518,7 +519,7 @@ void DiveLogImportDialog::loadFileContents(int value, whatChanged triggeredBy)
 				headers.append("Sample pressure");
 			} else {
 				// We do not know about this value
-				qDebug() << "Seabear import found an un-handled field: " << columnText;
+				report_info("Seabear import found an un-handled field: %s", qPrintable(columnText));
 				headers.append("");
 			}
 		}
@@ -613,7 +614,7 @@ void DiveLogImportDialog::loadFileContents(int value, whatChanged triggeredBy)
 		if (line.length() > 0)
 			columns = line.split(separator);
 		// now try and guess the columns
-		Q_FOREACH (QString columnText, currColumns) {
+		for (QString columnText: currColumns) {
 			count++;
 			/*
 			 * We have to skip the conversion of 2 to ₂ for APD Log

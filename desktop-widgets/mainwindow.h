@@ -67,8 +67,8 @@ public:
 		Count
 	};
 
-	void loadFiles(const QStringList &files);
-	void importFiles(const QStringList &importFiles);
+	void loadFiles(const std::vector<std::string> &files);
+	void importFiles(const std::vector<std::string> &importFiles);
 	void setToolButtonsEnabled(bool enabled);
 	void setApplicationState(ApplicationState state);
 	void enterPreviousState();
@@ -177,11 +177,11 @@ private:
 	QString filter_import();
 	QString filter_import_dive_sites();
 	static MainWindow *m_Instance;
-	QString displayedFilename(QString fullFilename);
+	QString displayedFilename(const std::string &fullFilename);
 	bool askSaveChanges();
 	bool okToClose(QString message);
 	void closeCurrentFile();
-	void setCurrentFile(const char *f);
+	void setCurrentFile(const std::string &f);
 	void updateCloudOnlineStatus();
 	void showProgressBar();
 	void hideProgressBar();

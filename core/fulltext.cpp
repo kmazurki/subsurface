@@ -128,7 +128,7 @@ static std::vector<QString> getWords(const dive *d)
 	tokenize(QString(d->buddy), res);
 	tokenize(QString(d->suit), res);
 	for (const tag_entry *tag = d->tag_list; tag; tag = tag->next)
-		tokenize(QString(tag->tag->name), res);
+		tokenize(QString::fromStdString(tag->tag->name), res);
 	for (int i = 0; i < d->cylinders.nr; ++i) {
 		const cylinder_t &cyl = *get_cylinder(d, i);
 		tokenize(QString(cyl.type.description), res);
@@ -139,8 +139,12 @@ static std::vector<QString> getWords(const dive *d)
 	}
 	// TODO: We should tokenize all dive-sites and trips first and then
 	// take the tokens from a cache.
-	if (d->dive_site)
+	if (d->dive_site) {
 		tokenize(d->dive_site->name, res);
+		const char *country = taxonomy_get_country(&d->dive_site->taxonomy);
+		if (country)
+			tokenize(country, res);
+	}
 	// TODO: We should index trips separately!
 	if (d->divetrip)
 		tokenize(d->divetrip->location, res);

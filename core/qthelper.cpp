@@ -22,11 +22,9 @@
 #include "tag.h"
 #include "imagedownloader.h"
 #include "xmlparams.h"
-#include "core/git-access.h" // for CLOUD_HOST definitions
 #include <QFile>
 #include <QRegularExpression>
 #include <QDir>
-#include <QDebug>
 #include <QStandardPaths>
 #include <QJsonDocument>
 #include <QNetworkProxy>
@@ -44,7 +42,7 @@
 
 #include <libxslt/documents.h>
 
-const char *existing_filename;
+std::string existing_filename;
 static QLocale loc;
 
 static inline QString degreeSigns()
@@ -297,10 +295,11 @@ bool gpsHasChanged(struct dive *dive, struct dive *master, const QString &gps_te
 
 static xmlDocPtr get_stylesheet_doc(const xmlChar *uri, xmlDictPtr, int, void *, xsltLoadType)
 {
-	QFile f(QLatin1String(":/xslt/") + (const char *)uri);
+	std::string filename = std::string(":/xslt/") + (const char *)uri;
+	QFile f(filename.c_str());
 	if (!f.open(QIODevice::ReadOnly)) {
 		if (verbose > 0) {
-			qDebug() << "cannot open stylesheet" << QLatin1String(":/xslt/") + (const char *)uri << f.errorString();
+			report_info("cannot open stylesheet %s %s", filename.c_str(), qPrintable(f.errorString()));
 			return NULL;
 		}
 	}
@@ -331,37 +330,37 @@ extern "C" xsltStylesheetPtr get_stylesheet(const char *name)
 	return xslt;
 }
 
-extern "C" char *move_away(const char *old_path)
+std::string move_away(const std::string &old_path)
 {
 	if (verbose > 1)
-		qDebug() << "move away" << old_path;
-	QDir oldDir(old_path);
+		report_info("move away %s", old_path.c_str());
+	QDir oldDir(old_path.c_str());
 	QDir newDir;
-	QString newPath;
+	std::string newPath;
 	int i = 0;
 	do {
-		newPath = QString(old_path) + QString(".%1").arg(++i);
-		newDir.setPath(newPath);
+		newPath = old_path + "." + std::to_string(++i);
+		newDir.setPath(newPath.c_str());
 	} while(newDir.exists());
 	if (verbose > 1)
-		qDebug() << "renaming to" << newPath;
-	if (!oldDir.rename(old_path, newPath)) {
+		report_info("renaming toi %s", newPath.c_str());
+	if (!oldDir.rename(old_path.c_str(), newPath.c_str())) {
 		if (verbose)
-			qDebug() << "rename of" << old_path << "to" << newPath << "failed";
+			report_info("rename of %s to %s failed", old_path.c_str(), newPath.c_str());
 		// this next one we only try on Windows... if we are on a different platform
 		// we simply give up and return an empty string
 #ifdef WIN32
-		if (subsurface_dir_rename(old_path, qPrintable(newPath)) == 0)
+		if (subsurface_dir_rename(old_path.c_str(), newPath.c_str()) == 0)
 #endif
-			return strdup("");
+			return std::string();
 	}
-	return copy_qstring(newPath);
+	return newPath;
 }
 
-extern "C" char *get_file_name(const char *fileName)
+std::string get_file_name(const char *fileName)
 {
 	QFileInfo fileInfo(fileName);
-	return copy_qstring(fileInfo.fileName());
+	return fileInfo.fileName().toStdString();
 }
 
 extern "C" void copy_image_and_overwrite(const char *cfileName, const char *path, const char *cnewName)
@@ -373,7 +372,7 @@ extern "C" void copy_image_and_overwrite(const char *cfileName, const char *path
 	if (file.exists())
 		file.remove();
 	if (!QFile::copy(fileName, newName))
-		qDebug() << "copy of" << fileName << "to" << newName << "failed";
+		report_info("copy of %s to %s failed", cfileName, qPrintable(newName));
 }
 
 static bool lessThan(const QPair<QString, int> &a, const QPair<QString, int> &b)
@@ -444,6 +443,14 @@ QString getUiLanguage()
 	return prefs.locale.lang_locale;
 }
 
+static std::vector<std::string> get_languages(const QLocale &loc)
+{
+	std::vector<std::string> res;
+	for (const QString &s: loc.uiLanguages())
+		res.push_back(s.toStdString());
+	return res;
+}
+
 /* TOOD: Move this to SettingsObjectWrapper, and also fix this complexity.
  * gezus.
  */
@@ -461,31 +468,35 @@ void initUiLanguage()
 	}
 
 	// Find language code with one '-', or use the first entry.
-	QStringList languages = loc.uiLanguages();
-	QString uiLang;
-	auto it = std::find_if(languages.begin(), languages.end(), [](const QString &s)
-				{ return s.count('-') == 1; });
-	uiLang = it == languages.end() ? languages[0] : *it;
+	std::vector<std::string> languages = get_languages(loc);
+	std::string uiLang;
+	if (!languages.empty()) {
+		auto it = std::find_if(languages.begin(), languages.end(), [](const std::string &s)
+					{ return std::count(s.begin(), s.end(), '-') == 1; });
+		uiLang = it == languages.end() ? languages[0] : *it;
+	}
 #ifdef SUBSURFACE_MOBILE
-	qDebug() << "uiLanguages was" << languages << ", picked" << uiLang;
+	report_info("uiLanguages was %s, picked %s", join(languages, ", ").c_str(), uiLang.c_str());
 #endif
 
 	// there's a stupid Qt bug on MacOS where uiLanguages doesn't give us the country info
-	if (!uiLang.contains('-') && uiLang != loc.bcp47Name()) {
+	if (!contains(uiLang, '-') && uiLang != loc.bcp47Name().toStdString()) {
 		QLocale loc2(loc.bcp47Name());
 		loc = loc2;
-		QStringList languages = loc2.uiLanguages();
+		std::vector<std::string> languages = get_languages(loc2);
 
-		it = std::find_if(languages.begin(), languages.end(), [](const QString &s)
-				{ return s.contains('-'); });
-		uiLang = it == languages.end() ? languages[0] : *it;
+		if (!languages.empty()) {
+			auto it = std::find_if(languages.begin(), languages.end(), [](const std::string &s)
+					{ return contains(s, '-'); });
+			uiLang = it == languages.end() ? languages[0] : *it;
+		}
 #ifdef SUBSURFACE_MOBILE
-		qDebug() << "bcp47 based languages was" << languages << ", picked" << uiLang;
+		report_info("bcp47 based languages was %s, picked %s", join(languages, ", ").c_str(), uiLang.c_str());
 #endif
 	}
 
 	free((void*)prefs.locale.lang_locale);
-	prefs.locale.lang_locale = copy_qstring(uiLang);
+	prefs.locale.lang_locale = strdup(uiLang.c_str());
 
 	if (!prefs.date_format_override || empty_string(prefs.date_format)) {
 		// derive our standard date format from what the locale gives us
@@ -519,12 +530,6 @@ void initUiLanguage()
 QLocale getLocale()
 {
 	return loc;
-}
-
-void set_filename(const char *filename)
-{
-	free((void *)existing_filename);
-	existing_filename = copy_string(filename);
 }
 
 QString get_depth_string(int mm, bool showunit, bool showdecimal)
@@ -1031,14 +1036,14 @@ QString get_last_dive_date_string()
 	return dives->nr > 0 ? get_dive_only_date_string(dives->dives[dives->nr - 1]->when) : gettextFromC::tr("no dives");
 }
 
-extern "C" char *get_current_date()
+std::string get_current_date()
 {
 	QDateTime ts(QDateTime::currentDateTime());;
 	QString current_date;
 
 	current_date = loc.toString(ts, QString(prefs.date_format_short));
 
-	return copy_qstring(current_date);
+	return current_date.toStdString();
 }
 
 static QMutex hashOfMutex;
@@ -1182,7 +1187,7 @@ QStringList mediaExtensionFilters()
 QStringList imageExtensionFilters()
 {
 	QStringList filters;
-	foreach (const QString &format, QImageReader::supportedImageFormats())
+	for (QString format: QImageReader::supportedImageFormats())
 		filters.append("*." + format);
 	return filters;
 }
@@ -1198,16 +1203,6 @@ QStringList videoExtensionFilters()
 extern "C" const char *local_file_path(struct picture *picture)
 {
 	return copy_qstring(localFilePath(picture->filename));
-}
-
-const QString picturedir()
-{
-	return QString(system_default_directory()).append("/picturedata/");
-}
-
-extern "C" char *picturedir_string()
-{
-	return copy_qstring(picturedir());
 }
 
 QString get_gas_string(struct gasmix gas)
@@ -1232,14 +1227,6 @@ QStringList get_dive_gas_list(const struct dive *d)
 				cyl->type.description + ")");
 	}
 	return list;
-}
-
-QString get_taglist_string(struct tag_entry *tag_list)
-{
-	char *buffer = taglist_get_tagstring(tag_list);
-	QString ret = QString::fromUtf8(buffer);
-	free(buffer);
-	return ret;
 }
 
 QStringList stringToList(const QString &s)
@@ -1370,64 +1357,41 @@ fraction_t string_to_fraction(const char *str)
 	return fraction;
 }
 
-int getCloudURL(QString &filename)
+// Sadly, the standard C++ library's regexp support is mediocre at best.
+static void sanitize_email(std::string &email)
 {
-	QString email = QString(prefs.cloud_storage_email);
-	email.replace(QRegularExpression("[^a-zA-Z0-9@._+-]"), "");
-	if (email.isEmpty() || empty_string(prefs.cloud_storage_password))
-		return report_error("Please configure Cloud storage email and password in the preferences");
+	size_t j = 0;
+	for (char c: email) {
+		if (isalnum(c) || c == '@' || c == '.' ||
+		    c == '_' || c == '+' || c == '-')
+			email[j++] = c;
+	}
+	email.resize(j);
+}
+
+std::optional<std::string> getCloudURL()
+{
+	std::string email(prefs.cloud_storage_email);
+	sanitize_email(email);
+	if (email.empty() || empty_string(prefs.cloud_storage_password)) {
+		report_error("Please configure Cloud storage email and password in the preferences");
+		return {};
+	}
 	if (email != prefs.cloud_storage_email_encoded) {
 		free((void *)prefs.cloud_storage_email_encoded);
-		prefs.cloud_storage_email_encoded = copy_qstring(email);
+		prefs.cloud_storage_email_encoded = strdup(email.c_str());
 	}
-	filename = QString(QString(prefs.cloud_base_url) + "git/%1[%1]").arg(email);
+	std::string filename = std::string(prefs.cloud_base_url) + "git/" + email + "[" + email + "]";
 	if (verbose)
-		qDebug() << "returning cloud URL" << filename;
-	return 0;
-}
-
-extern "C" char *cloud_url()
-{
-	QString filename;
-	getCloudURL(filename);
-	return copy_qstring(filename);
-}
-
-std::string normalize_cloud_name(const char *remote_in)
-{
-	// replace ssrf-cloud-XX.subsurface... names with cloud.subsurface... names
-	// that trailing '/' is to match old code
-	QString ri(remote_in);
-	ri.replace(QRegularExpression(CLOUD_HOST_PATTERN), CLOUD_HOST_GENERIC "/");
-	return ri.toStdString();
-}
-
-extern "C" bool getProxyString(char **buffer)
-{
-	if (prefs.proxy_type == QNetworkProxy::HttpProxy) {
-		QString proxy;
-		if (prefs.proxy_auth)
-			proxy = QString("http://%1:%2@%3:%4").arg(prefs.proxy_user).arg(prefs.proxy_pass)
-					.arg(prefs.proxy_host).arg(prefs.proxy_port);
-		else
-			proxy = QString("http://%1:%2").arg(prefs.proxy_host).arg(prefs.proxy_port);
-		if (buffer)
-			*buffer = copy_qstring(proxy);
-		return true;
-	}
-	return false;
+		report_info("returning cloud URL %s", filename.c_str());
+	return filename;
 }
 
 extern "C" void subsurface_mkdir(const char *dir)
 {
 	QDir directory;
 	if (!directory.mkpath(QString(dir)))
-		qDebug() << "failed to create path" << dir;
-}
-
-extern "C" void parse_display_units(char *line)
-{
-	qDebug() << line;
+		report_info("failed to create path %s", dir);
 }
 
 extern "C" enum deco_mode decoMode(bool in_planner)
@@ -1577,7 +1541,7 @@ void parse_seabear_header(const char *filename, struct xml_params *params)
 			xml_params_add_int(params, "pressureField", index++);
 		} else {
 			// We do not know about this value
-			qDebug() << "Seabear import found an un-handled field: " << columnText;
+			report_info("Seabear import found an un-handled field: %s", qPrintable(columnText));
 		}
 	}
 
