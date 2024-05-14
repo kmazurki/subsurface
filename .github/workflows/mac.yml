@@ -1,4 +1,5 @@
 name: Mac
+
 on:
   push:
     paths-ignore:
@@ -11,38 +12,38 @@ on:
     branches:
     - master
 
+
 jobs:
-  buildMac:
+  build:
     runs-on: macOS-11
     steps:
     - name: checkout sources
-      uses: actions/checkout@v1
-
-    - name: atomically create or retrieve the build number and assemble release notes
-      id: version_number
-      if: github.event_name == 'push'
-      run: |
-        bash scripts/get-atomic-buildnr.sh ${{ github.sha }} ${{ secrets.NIGHTLY_BUILDS }} "CICD-release"
-        version=$(cat release-version)
-        echo "version=$version" >> $GITHUB_OUTPUT
-
-    - name: store dummy version and build number for pull request
-      if: github.event_name == 'pull_request'
-      run: |
-        echo "100" > latest-subsurface-buildnumber
-        echo "CICD-pull-request" > latest-subsurface-buildnumber-extension
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        submodules: recursive
 
     - name: setup Homebrew
       run: brew install hidapi libxslt libjpg libmtp create-dmg confuse
-    - name: set our Qt build
-      run: |
-        curl --output ssrf-Qt-5.15.2-mac.tar.xz https://f002.backblazeb2.com/file/Subsurface-Travis/ssrf-Qt5.15.2.tar.xz
-        tar -xJf ssrf-Qt-5.15.2-mac.tar.xz
+
+    - name: checkout Qt resources
+      uses: actions/checkout@v4
+      with:
+        repository: subsurface/qt-mac
+        ref: main
+        path: qt-mac
+
+    - name: set the version information
+      id: version_number
+      uses: ./.github/actions/manage-version
+      with:
+        nightly-builds-secret: ${{ secrets.NIGHTLY_BUILDS }}
+
     - name: build Subsurface
       id: build
       run: |
         cd ${GITHUB_WORKSPACE}/..
-        export QT_ROOT=${GITHUB_WORKSPACE}/Qt5.15.2/5.15.2/clang_64
+        export QT_ROOT=${GITHUB_WORKSPACE}/qt-mac/Qt5.15.13
         export QT_QPA_PLATFORM_PLUGIN_PATH=$QT_ROOT/plugins
         export PATH=$QT_ROOT/bin:$PATH
         export CMAKE_PREFIX_PATH=$QT_ROOT/lib/cmake
@@ -58,10 +59,18 @@ jobs:
         echo "Created $IMG"
         echo "dmg=$IMG" >> $GITHUB_OUTPUT
 
+    - name: publish pull request artifacts
+      if: github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: Subsurface-MacOS-${{ steps.version_number.outputs.version }}
+        path: ${{ steps.build.outputs.dmg }}
+        compression-level: 0
+
     # only publish a 'release' on push events (those include merging a PR)
     - name: upload binaries
       if: github.event_name == 'push'
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: v${{ steps.version_number.outputs.version }}
         repository: ${{ github.repository_owner }}/nightly-builds

@@ -1,0 +1,19 @@
+name: Ubuntu 20.04 / Qt 5.12--
+
+on:
+  push:
+    paths-ignore:
+    - scripts/docker/**
+    branches:
+    - master
+  pull_request:
+    paths-ignore:
+    - scripts/docker/**
+    branches:
+    - master
+
+jobs:
+  do-build-test:
+    uses: ./.github/workflows/linux-debian-generic.yml
+    with:
+      container-image: ubuntu:20.04

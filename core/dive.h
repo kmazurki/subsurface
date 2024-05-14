@@ -141,8 +141,7 @@ void split_divecomputer(const struct dive *src, int num, struct dive **out1, str
 	for (_dc = &_dive->dc; _dc; _dc = _dc->next)
 
 #define for_each_relevant_dc(_dive, _dc) \
-	bool _all_planned = !has_planned(_dive, false); \
-	for (_dc = &_dive->dc; _dc; _dc = _dc->next) if (_all_planned || !is_dc_planner(_dc))
+	for (_dc = &_dive->dc; _dc; _dc = _dc->next) if (!is_logged(_dive) || !is_dc_planner(_dc))
 
 extern struct dive *get_dive_by_uniq_id(int id);
 extern int get_idx_by_uniq_id(int id);
@@ -187,7 +186,7 @@ extern int split_dive(const struct dive *dive, struct dive **new1, struct dive *
 extern int split_dive_at_time(const struct dive *dive, duration_t time, struct dive **new1, struct dive **new2);
 extern struct dive *merge_dives(const struct dive *a, const struct dive *b, int offset, bool prefer_downloaded, struct dive_trip **trip, struct dive_site **site);
 extern struct dive *try_to_merge(struct dive *a, struct dive *b, bool prefer_downloaded);
-extern void copy_events_until(const struct dive *sd, struct dive *dd, int time);
+extern void copy_events_until(const struct dive *sd, struct dive *dd, int dcNr, int time);
 extern void copy_used_cylinders(const struct dive *s, struct dive *d, bool used_only);
 extern bool is_cylinder_used(const struct dive *dive, int idx);
 extern bool is_cylinder_prot(const struct dive *dive, int idx);
@@ -207,7 +206,8 @@ extern void invalidate_dive_cache(struct dive *dc);
 
 extern int total_weight(const struct dive *);
 
-extern bool has_planned(const struct dive *dive, bool planned);
+extern bool is_planned(const struct dive *dive);
+extern bool is_logged(const struct dive *dive);
 
 /* Get gasmixes at increasing timestamps.
  * In "evp", pass a pointer to a "struct event *" which is NULL-initialized on first invocation.

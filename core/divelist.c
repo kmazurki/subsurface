@@ -561,7 +561,7 @@ int init_decompression(struct deco_state *ds, const struct dive *dive, bool in_p
 			}
 			add_segment(ds, surface_pressure, air, surface_time, 0, OC, prefs.decosac, in_planner);
 #if DECO_CALC_DEBUG & 2
-			printf("Tissues after surface intervall of %d:%02u:\n", FRACTION(surface_time, 60));
+			printf("Tissues after surface intervall of %d:%02u:\n", FRACTION_TUPLE(surface_time, 60));
 			dump_tissues(ds);
 #endif
 		}
@@ -598,7 +598,7 @@ int init_decompression(struct deco_state *ds, const struct dive *dive, bool in_p
 		}
 		add_segment(ds, surface_pressure, air, surface_time, 0, OC, prefs.decosac, in_planner);
 #if DECO_CALC_DEBUG & 2
-		printf("Tissues after surface intervall of %d:%02u:\n", FRACTION(surface_time, 60));
+		printf("Tissues after surface intervall of %d:%02u:\n", FRACTION_TUPLE(surface_time, 60));
 		dump_tissues(ds);
 #endif
 	}
@@ -765,18 +765,6 @@ struct dive *unregister_dive(int idx)
 		amount_selected--;
 	dive->selected = false;
 	return dive;
-}
-
-/* this implements the mechanics of removing the dive from the global
- * dive table and the trip, but doesn't deal with updating dive trips, etc */
-void delete_single_dive(int idx)
-{
-	struct dive *dive = get_dive(idx);
-	if (!dive)
-		return; /* this should never happen */
-	remove_dive_from_trip(dive, divelog.trips);
-	unregister_dive_from_dive_site(dive);
-	delete_dive_from_table(divelog.dives, idx);
 }
 
 void process_loaded_dives()
@@ -989,7 +977,7 @@ void add_imported_dives(struct divelog *import_log, int flags)
 	/* Remove old dives */
 	for (i = 0; i < dives_to_remove.nr; i++) {
 		idx = get_divenr(dives_to_remove.dives[i]);
-		delete_single_dive(idx);
+		delete_single_dive(&divelog, idx);
 	}
 	dives_to_remove.nr = 0;
 

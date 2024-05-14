@@ -749,7 +749,7 @@ static void add_plot_pressure(struct plot_info *pi, int time, int cyl, pressure_
 
 static void setup_gas_sensor_pressure(const struct dive *dive, const struct divecomputer *dc, struct plot_info *pi)
 {
-	int prev, i;
+	int i;
 	const struct event *ev;
 
 	if (pi->nr_cylinders == 0)
@@ -762,7 +762,8 @@ static void setup_gas_sensor_pressure(const struct dive *dive, const struct dive
 	std::vector<int> last(num_cyl, INT_MAX);
 	const struct divecomputer *secondary;
 
-	prev = explicit_first_cylinder(dive, dc);
+	int prev = explicit_first_cylinder(dive, dc);
+	prev = prev >= 0 ? prev : 0;
 	seen[prev] = 1;
 
 	for (ev = get_next_event(dc->events, "gaschange"); ev != NULL; ev = get_next_event(ev->next, "gaschange")) {
@@ -1367,8 +1368,8 @@ static std::vector<std::string> plot_string(const struct dive *d, const struct p
 	std::vector<std::string> res;
 
 	depthvalue = get_depth_units(entry->depth, NULL, &depth_unit);
-	res.push_back(casprintf_loc(translate("gettextFromC", "@: %d:%02d"), FRACTION(entry->sec, 60), depthvalue));
-	res.push_back(casprintf_loc(translate("gettextFromC", "D: %.1f%s"), depth_unit));
+	res.push_back(casprintf_loc(translate("gettextFromC", "@: %d:%02d"), FRACTION_TUPLE(entry->sec, 60)));
+	res.push_back(casprintf_loc(translate("gettextFromC", "D: %.1f%s"), depthvalue, depth_unit));
 	for (cyl = 0; cyl < pi->nr_cylinders; cyl++) {
 		int mbar = get_plot_pressure(pi, idx, cyl);
 		if (!mbar)

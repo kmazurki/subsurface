@@ -339,28 +339,27 @@ extern "C" void selective_copy_dive(const struct dive *s, struct dive *d, struct
 }
 #undef CONDITIONAL_COPY_STRING
 
-/* copies all events from all dive computers before a given time
+/* copies all events from the given dive computer before a given time
    this is used when editing a dive in the planner to preserve the events
    of the old dive */
-extern "C" void copy_events_until(const struct dive *sd, struct dive *dd, int time)
+extern "C" void copy_events_until(const struct dive *sd, struct dive *dd, int dcNr, int time)
 {
 	if (!sd || !dd)
 		return;
 
 	const struct divecomputer *s = &sd->dc;
-	struct divecomputer *d = &dd->dc;
+	struct divecomputer *d = get_dive_dc(dd, dcNr);
 
-	while (s && d) {
-		const struct event *ev;
-		ev = s->events;
-		while (ev != NULL) {
-			// Don't add events the planner knows about
-			if (ev->time.seconds < time && !event_is_gaschange(ev) && !event_is_divemodechange(ev))
-				add_event(d, ev->time.seconds, ev->type, ev->flags, ev->value, ev->name);
-			ev = ev->next;
-		}
-		s = s->next;
-		d = d->next;
+	if (!s || !d)
+		return;
+
+	const struct event *ev;
+	ev = s->events;
+	while (ev != NULL) {
+		// Don't add events the planner knows about
+		if (ev->time.seconds < time && !event_is_gaschange(ev) && !event_is_divemodechange(ev))
+			add_event(d, ev->time.seconds, ev->type, ev->flags, ev->value, ev->name);
+		ev = ev->next;
 	}
 }
 
@@ -969,7 +968,7 @@ static void fixup_dc_depths(struct dive *dive, struct divecomputer *dc)
 	}
 
 	update_depth(&dc->maxdepth, maxdepth);
-	if (!has_planned(dive, false) || !is_dc_planner(dc))
+	if (!is_logged(dive) || !is_dc_planner(dc))
 		if (maxdepth > dive->maxdepth.mm)
 			dive->maxdepth.mm = maxdepth;
 }
@@ -2550,17 +2549,27 @@ static void join_dive_computers(struct dive *d, struct divecomputer *res,
 	remove_redundant_dc(res, prefer_downloaded);
 }
 
-// Does this dive have a dive computer for which is_dc_planner has value planned
-extern "C" bool has_planned(const struct dive *dive, bool planned)
+static bool has_dc_type(const struct dive *dive, bool dc_is_planner)
 {
 	const struct divecomputer *dc = &dive->dc;
 
 	while (dc) {
-		if (is_dc_planner(&dive->dc) == planned)
+		if (is_dc_planner(dc) == dc_is_planner)
 			return true;
 		dc = dc->next;
 	}
 	return false;
+}
+
+// Does this dive have a dive computer for which is_dc_planner has value planned
+extern "C" bool is_planned(const struct dive *dive)
+{
+	return has_dc_type(dive, true);
+}
+
+extern "C" bool is_logged(const struct dive *dive)
+{
+	return has_dc_type(dive, false);
 }
 
 /*

@@ -1,4 +1,5 @@
 name: Coverity Scan Linux Qt 5.9
+
 on:
   schedule:
     - cron: '0 18 * * *' # Daily at 18:00 UTC
@@ -10,14 +11,11 @@ jobs:
       image: ubuntu:22.04
 
     steps:
-    - name: checkout sources
-      uses: actions/checkout@v1
-
     - name: add build dependencies
       run: |
         apt-get update
-        apt-get upgrade -y
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -q --force-yes \
+        apt-get dist-upgrade -y
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
         wget curl \
         autoconf automake cmake g++ git libcrypto++-dev libcurl4-gnutls-dev \
         libgit2-dev libqt5qml5 libqt5quick5 libqt5svg5-dev \
@@ -29,12 +27,22 @@ jobs:
         qtpositioning5-dev qtscript5-dev qttools5-dev qttools5-dev-tools \
         qtquickcontrols2-5-dev libbluetooth-dev libmtp-dev
 
+    - name: checkout sources
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        submodules: recursive
+
     - name: configure environment
-      env:
-         SUBSURFACE_REPO_PATH: ${{ github.workspace }}
       run: |
-        git config --global --add safe.directory ${SUBSURFACE_REPO_PATH}
-        git config --global --add safe.directory ${SUBSURFACE_REPO_PATH}/libdivecomputer
+        git config --global --add safe.directory $GITHUB_WORKSPACE
+        git config --global --add safe.directory $GITHUB_WORKSPACE/libdivecomputer
+
+    - name: get the version information
+      id: version_number
+      uses: ./.github/actions/manage-version
+      with:
+        no-increment: true
 
     - name: run coverity scan
       uses: vapier/coverity-scan-action@v1
@@ -44,5 +52,5 @@ jobs:
         email: glance@acc.umu.se
         command: subsurface/scripts/build.sh -desktop -build-with-webkit
         working-directory: ${{ github.workspace }}/..
-        version: $(/scripts/get-version)
+        version: ${{ steps.version_number.outputs.version }}
         description: Automatic scan on github actions
