@@ -609,7 +609,7 @@ void MainWindow::on_actionPreferences_triggered()
 
 void MainWindow::on_actionQuit_triggered()
 {
-	if (!okToClose(tr("Please save or cancel the current dive edit before quiting the application.")))
+	if (!okToClose(tr("Please save or cancel the current dive edit before quitting the application.")))
 		return;
 
 	writeSettings();
@@ -665,8 +665,10 @@ void MainWindow::on_actionReplanDive_triggered()
 {
 	if (!plannerStateClean() || !current_dive || !userMayChangeAppState())
 		return;
-	else if (!is_dc_planner(get_dive_dc(current_dive, profile->dc))) {
-		if (QMessageBox::warning(this, tr("Warning"), tr("Trying to replan a dive dive profile that is not a dive plan."),
+
+	const struct divecomputer *dc = get_dive_dc(current_dive, profile->dc);
+	if (!(is_dc_planner(dc) || is_dc_manually_added_dive(dc))) {
+		if (QMessageBox::warning(this, tr("Warning"), tr("Trying to replan a dive profile that has not been manually added."),
 					 QMessageBox::Ok | QMessageBox::Cancel) == QMessageBox::Cancel)
 					return;
 	}
@@ -707,7 +709,7 @@ void MainWindow::on_actionAddDive_triggered()
 	d.dc.duration.seconds = 40 * 60;
 	d.dc.maxdepth.mm = M_OR_FT(15, 45);
 	d.dc.meandepth.mm = M_OR_FT(13, 39); // this creates a resonable looking safety stop
-	make_manually_added_dc(&d.dc);
+	make_manually_added_dive_dc(&d.dc);
 	fake_dc(&d.dc);
 	fixup_dive(&d);
 
@@ -986,13 +988,9 @@ QString MainWindow::filter_import_dive_sites()
 	return f;
 }
 
-bool MainWindow::askSaveChanges()
+int MainWindow::saveChangesConfirmationBox(QString message)
 {
 	QMessageBox response(this);
-
-	QString message = !existing_filename.empty() ?
-		tr("Do you want to save the changes that you made in the file %1?").arg(displayedFilename(existing_filename)) :
-		tr("Do you want to save the changes that you made in the data file?");
 
 	response.setStandardButtons(QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
 	response.setDefaultButton(QMessageBox::Save);
@@ -1001,8 +999,17 @@ bool MainWindow::askSaveChanges()
 	response.setInformativeText(tr("Changes will be lost if you don't save them."));
 	response.setIcon(QMessageBox::Warning);
 	response.setWindowModality(Qt::WindowModal);
-	int ret = response.exec();
 
+	return response.exec();
+}
+
+bool MainWindow::askSaveChanges()
+{
+	QString message = !existing_filename.empty() ?
+		tr("Do you want to save the changes that you made in the file %1?").arg(displayedFilename(existing_filename)) :
+		tr("Do you want to save the changes that you made in the data file?");
+
+	int ret = saveChangesConfirmationBox(std::move(message));
 	switch (ret) {
 	case QMessageBox::Save:
 		file_save();
@@ -1057,9 +1064,21 @@ void MainWindow::writeSettings()
 void MainWindow::closeEvent(QCloseEvent *event)
 {
 	if (inPlanner()) {
-		on_actionQuit_triggered();
-		event->ignore();
-		return;
+		int ret = saveChangesConfirmationBox("Do you want to save the changes that you made in the planner into your dive log?");
+		switch (ret) {
+		case QMessageBox::Save:
+			DivePlannerPointsModel::instance()->savePlan();
+
+			break;
+		case QMessageBox::Cancel:
+			event->ignore();
+
+			return;
+		case QMessageBox::Discard:
+			DivePlannerPointsModel::instance()->cancelPlan();
+
+			break;
+		}
 	}
 
 	if (!Command::isClean() && (askSaveChanges() == false)) {
