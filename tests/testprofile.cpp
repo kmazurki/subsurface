@@ -18,15 +18,13 @@
 
 void TestProfile::init()
 {
+	setlocale(LC_ALL, "C");
+
 	// Set UTF8 text codec as in real applications
 	QTextCodec::setCodecForLocale(QTextCodec::codecForMib(106));
-	// first, setup the preferences
 
-	// normally we should be able to do this - but it makes this test fail because the reference data
-	// assume that the prefs are all 0 / false
-	// copy_prefs(&default_prefs, &prefs);
-	// instead we just set up the cloud_base_url to prevent parse_file() from crashing
-	prefs.cloud_base_url = strdup(default_prefs.cloud_base_url);
+	// first, setup the preferences
+	copy_prefs(&default_prefs, &prefs);
 
 	QCoreApplication::setOrganizationName("Subsurface");
 	QCoreApplication::setOrganizationDomain("subsurface.hohndel.org");
@@ -36,6 +34,7 @@ void TestProfile::testProfileExport()
 {
 	prefs.planner_deco_mode = BUEHLMANN;
 	parse_file(SUBSURFACE_TEST_DATA "/dives/abitofeverything.ssrf", &divelog);
+	sort_dive_table(divelog.dives);
 	save_profiledata("exportprofile.csv", false);
 	QFile org(SUBSURFACE_TEST_DATA "/dives/exportprofilereference.csv");
 	QCOMPARE(org.open(QFile::ReadOnly), true);
@@ -52,6 +51,7 @@ void TestProfile::testProfileExportVPMB()
 {
 	prefs.planner_deco_mode = VPMB;
 	parse_file(SUBSURFACE_TEST_DATA "/dives/abitofeverything.ssrf", &divelog);
+	sort_dive_table(divelog.dives);
 	save_profiledata("exportprofileVPMB.csv", false);
 	QFile org(SUBSURFACE_TEST_DATA "/dives/exportprofilereferenceVPMB.csv");
 	QCOMPARE(org.open(QFile::ReadOnly), true);

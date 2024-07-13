@@ -93,7 +93,8 @@ extern void reset_cylinders(struct dive *dive, bool track_gas);
 extern int gas_volume(const cylinder_t *cyl, pressure_t p); /* Volume in mliter of a cylinder at pressure 'p' */
 extern int find_best_gasmix_match(struct gasmix mix, const struct cylinder_table *cylinders);
 extern void fill_default_cylinder(const struct dive *dive, cylinder_t *cyl); /* dive is needed to fill out MOD, which depends on salinity. */
-extern cylinder_t create_new_cylinder(const struct dive *dive); /* dive is needed to fill out MOD, which depends on salinity. */
+extern cylinder_t create_new_manual_cylinder(const struct dive *dive); /* dive is needed to fill out MOD, which depends on salinity. */
+extern void add_default_cylinder(struct dive *dive);
 extern int first_hidden_cylinder(const struct dive *d);
 #ifdef DEBUG_CYL
 extern void dump_cylinders(struct dive *dive, bool verbose);
@@ -125,9 +126,9 @@ extern void reset_tank_info_table(struct tank_info_table *table);
 extern void clear_tank_info_table(struct tank_info_table *table);
 extern void add_tank_info_metric(struct tank_info_table *table, const char *name, int ml, int bar);
 extern void add_tank_info_imperial(struct tank_info_table *table, const char *name, int cuft, int psi);
-extern void set_tank_info_size(struct tank_info_table *table, const char *name, volume_t size);
-extern void set_tank_info_workingpressure(struct tank_info_table *table, const char *name, pressure_t working_pressure);
-extern struct tank_info *get_tank_info(struct tank_info_table *table, const char *name);
+extern void extract_tank_info(const struct tank_info *info, volume_t *size, pressure_t *working_pressure);
+extern bool get_tank_info_data(struct tank_info_table *table, const char *name, volume_t *size, pressure_t *pressure);
+extern void set_tank_info_data(struct tank_info_table *table, const char *name, volume_t size, pressure_t working_pressure);
 
 struct ws_info_t {
 	const char *name;
